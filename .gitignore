@@ -1,0 +1,7 @@
+.venv/
+logs/
+selenium_approach/
+**/**scratch**.*
+**scratch**/
+slither.db
+tags*
