@@ -101,6 +101,7 @@ def validate_storage(logger:logging.Logger, flg_drop_db = False):
             CREATE TABLE IF NOT EXISTS server_user_rank (
                 server_id TEXT,
                 server_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                flg_active NOT NULL DEFAULT TRUE,
                 rank INTEGER,
                 nick TEXT,
                 score INTEGER,
@@ -127,11 +128,11 @@ def store_data(logger:logging.Logger, data, current_time: dt.datetime):
     
     for index, row in df.iterrows():
         try:
-            row_data = (row['server_id'], row['server_time'], row['rank'], row['nick'], row['score'], row['created_at'])
+            row_data = (row['server_id'], row['server_time'], True, row['rank'], row['nick'], row['score'], row['created_at'])
             conn.execute('''
                 INSERT OR IGNORE INTO server_user_rank
-                (server_id, server_time, rank, nick, score, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (server_id, server_time, flg_active, rank, nick, score, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ''',
                 row_data)
         except Exception as e:
