@@ -165,11 +165,6 @@ def fetch_table_size_in_mb(logger:logging.Logger):
     conn.close()
     return total_size
 
-if __name__ == "__main__":
-    log_dir = Path.cwd() / 'logs'
-    log_file = 'main.log'
-    util_logging.setup_logging(log_dir, log_file, logging.INFO)
-    logger = logging.getLogger('default')
 def test_database(logger: logging.Logger):
 
     first_user_data = {
@@ -195,6 +190,9 @@ def test_database(logger: logging.Logger):
     }
     store_data(logger, second_user_data, dt.datetime.now(dt.timezone.utc))
 
+
+
+def main(logger: logging.Logger):
     while True:
         logger.info("Starting load...")
         time_now = dt.datetime.now(dt.timezone.utc)
@@ -217,6 +215,15 @@ def test_database(logger: logging.Logger):
             exit()
 
         time.sleep(3)
+
+if __name__ == "__main__":
+    log_dir = Path.cwd() / 'logs'
+    log_file = 'main.log'
+    util_logging.setup_logging(log_dir, log_file, logging.INFO)
+    logger = logging.getLogger('default')
+
+    # main(logger)
+    test_database(logger)
 
 
 # build dashboard with 
