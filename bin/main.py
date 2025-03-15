@@ -7,7 +7,9 @@ import sqlite3  # Import sqlite3 module
 import logging
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
+from database import SlitherDatabase
 import util_logging
 
 def fetch_webpage(url, logger:logging.Logger, flg_dump_content = False):
@@ -79,91 +81,7 @@ def process_table(table, logger:logging.Logger):
         return out
     return None
 
-def validate_storage(logger:logging.Logger, flg_drop_db = False):
-    logger.info("Validating storage...")
 
-    if flg_drop_db:
-        logger.warning("└─ Dropping database...")
-        os.remove('slither.db')
-        logger.warning("│    └─done.")
-
-    logger.info("└─ Connecting to database...")
-    conn = sqlite3.connect('slither.db')
-    cursor = conn.cursor()
-    
-    # Check if the table exists before creating it
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='server_user_rank';")
-    table_exists = cursor.fetchone() is not None
-
-    if not table_exists:
-        logger.info("└─ creating table...")
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS server_user_rank (
-                server_id TEXT,
-                server_time TIMESTAMP WITH TIME ZONE NOT NULL,
-                flg_active NOT NULL DEFAULT TRUE,
-                rank INTEGER,
-                nick TEXT,
-                score INTEGER,
-                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (server_id, server_time, rank, nick)
-            )
-        ''')
-        logger.info("│    └─done.")
-    else:
-        logger.info("└─ Table already exists.")
-    conn.commit()
-    conn.close()
-
-def store_data(logger:logging.Logger, data, current_time: dt.datetime):
-    logger.debug("│    └─ storing data...")
-    conn = sqlite3.connect('slither.db')
-    cursor = conn.cursor()
-    
-    df = dataframe(data['records'])
-    df['server_id'] = data['server_id']
-    df['server_time'] = data['server_time']
-    df['created_at'] = current_time.isoformat()
-    df = df[['server_id', 'server_time', 'rank', 'nick', 'score', 'created_at']]
-    
-    for index, row in df.iterrows():
-        try:
-            row_data = (row['server_id'], row['server_time'], True, row['rank'], row['nick'], row['score'], row['created_at'])
-            conn.execute('''
-                INSERT OR IGNORE INTO server_user_rank
-                (server_id, server_time, flg_active, rank, nick, score, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''',
-                row_data)
-        except Exception as e:
-            logger.error(f"Error inserting row {index}: {e}")
-    conn.commit()
-    conn.close()
-
-def fetch_table_size_in_rows(logger:logging.Logger):
-    conn = sqlite3.connect('slither.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT COUNT(*) FROM server_user_rank')
-    row_count = cursor.fetchone()[0]
-    logger.info(f"└─ Number of rows in server_user_rank: {row_count}")
-    conn.close()
-
-def fetch_table_size_in_mb(logger:logging.Logger):
-    conn = sqlite3.connect('slither.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT
-            SUM(pgsize)/(1024.0*1024.0)
-        FROM
-            dbstat
-        WHERE
-            name = "server_user_rank";
-    ''')
-    table_info = cursor.fetchall()
-    total_size = table_info[0][0]
-    logger.info(f"└─ Table size in MB: {total_size}")
-    conn.close()
-    return total_size
 
 def test_database(logger: logging.Logger):
 
@@ -176,7 +94,7 @@ def test_database(logger: logging.Logger):
             {"rank": 1, "nick": "UserA", "score": 100}
         ]
     }
-    store_data(logger, first_user_data, dt.datetime.now(dt.timezone.utc))
+    database.server_user_rank_insert(first_user_data)
 
     time.sleep(2)
     
@@ -188,42 +106,63 @@ def test_database(logger: logging.Logger):
             {"rank": 1, "nick": "UserB", "score": 150}
         ]
     }
-    store_data(logger, second_user_data, dt.datetime.now(dt.timezone.utc))
 
 
 
-def main(logger: logging.Logger):
+def main(
+    logger: logging.Logger,
+    database: SlitherDatabase
+    ):
+
     while True:
         logger.info("Starting load...")
         time_now = dt.datetime.now(dt.timezone.utc)
         logger.info(f"└─ {time_now.isoformat()}")
-        validate_storage(flg_drop_db = False, logger = logger)
+
+        database.validate_storage(
+            flg_drop_table = False
+        )
+
         url = "https://ntl-slither.com/ss/?lowts=0"
+
         content = fetch_webpage(url, logger, flg_dump_content = False)
         tables = extract_tables(content, logger)
         logger.info(f"│    └─ {len(tables)} tables found.")
-        for table in tables:
+
+        for idx, table in enumerate(tables):
             data = process_table(table, logger)
             if data:
-                store_data(logger, data, time_now)
+                database.server_user_rank_insert(data)
         logger.info("└─ sleeping for 2 minutes...")
-        fetch_table_size_in_rows(logger)
-        size = fetch_table_size_in_mb(logger)
+        size_rows = database.fetch_table_size_in_rows()
+        size_mb = database.fetch_table_size_in_mb()
 
-        if size > 30000:
+        if size_mb > 5000:
             logger.critical("└─ table size > 5000 MB, exiting...")
             exit()
 
         time.sleep(3)
 
 if __name__ == "__main__":
+
+    print('setting up logging...')
     log_dir = Path.cwd() / 'logs'
     log_file = 'main.log'
     util_logging.setup_logging(log_dir, log_file, logging.INFO)
     logger = logging.getLogger('default')
+    print('loading environment variables...')
+    load_dotenv()
 
-    # main(logger)
-    test_database(logger)
+    # # # main(logger)
+    main(
+        logger,
+        database = SlitherDatabase(
+            # connection_string=os.environ['CONN_STRING_POSTGRES'],
+            connection_string=os.environ['CONN_STRING_SQLITE'],
+            logger = logger
+        )
+    )
+    # # # test_database(logger)
 
 
 # build dashboard with 
