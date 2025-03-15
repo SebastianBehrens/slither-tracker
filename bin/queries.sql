@@ -16,7 +16,7 @@ CREATE TABLE tmp AS
 
 DROP TABLE server_user_rank
 DROP TABLE tmp
- DELETE FROM server_user_rank
+DELETE FROM server_user_rank
 
 -- SELECT DISTINCT
 -- created_at
@@ -231,3 +231,6 @@ SELECT
 FROM RankChanges
   WHERE next_time IS NOT NULL  -- Only include completed stints
 ORDER BY server_id, nick, rank, server_time;
+
+
+
