@@ -5,6 +5,7 @@ selenium_approach/
 **scratch**/
 slither.db
 tags*
+.env
 
 ### frontend ignores
 # dependencies
