@@ -6,6 +6,7 @@ selenium_approach/
 slither.db
 tags*
 .env
+**/__pycache__/
 
 ### frontend ignores
 # dependencies
