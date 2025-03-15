@@ -5,7 +5,10 @@ colorlog==6.9.0
 idna==3.10
 numpy==2.2.3
 pandas==2.2.3
+psycopg==3.2.6
+psycopg-binary==3.2.6
 python-dateutil==2.9.0.post0
+python-dotenv==1.0.1
 pytz==2025.1
 requests==2.32.3
 six==1.17.0
