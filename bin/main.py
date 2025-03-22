@@ -83,31 +83,6 @@ def process_table(table, logger:logging.Logger):
 
 
 
-def test_database(logger: logging.Logger):
-
-    first_user_data = {
-        'server_id': 'test_server_1',
-        'server_ip': '127.0.0.1',
-        'server_time': dt.datetime.now(dt.timezone.utc).isoformat(),
-        'flg_active': True,
-        'records': [
-            {"rank": 1, "nick": "UserA", "score": 100}
-        ]
-    }
-    database.server_user_rank_insert(first_user_data)
-
-    time.sleep(2)
-    
-    second_user_data = {
-        'server_id': 'test_server_1',
-        'server_ip': '127.0.0.1',
-        'server_time': dt.datetime.now(dt.timezone.utc).isoformat(),
-        'records': [
-            {"rank": 1, "nick": "UserB", "score": 150}
-        ]
-    }
-
-
 
 def main(
     logger: logging.Logger,
@@ -116,7 +91,7 @@ def main(
 
     while True:
         logger.info("Starting load...")
-        time_now = dt.datetime.now(dt.timezone.utc)
+        time_now = dt.datetime.now(dt.timezone.utc) # later used to timestamp every record created in one iteration of this while loop.
         logger.info(f"└─ {time_now.isoformat()}")
 
         database.validate_storage(
@@ -132,10 +107,14 @@ def main(
         for idx, table in enumerate(tables):
             data = process_table(table, logger)
             if data:
-                database.server_user_rank_insert(data)
+                database.server_user_rank_insert(data,created_at = time_now)
         logger.info("└─ sleeping for 2 minutes...")
         size_rows = database.fetch_table_size_in_rows()
         size_mb = database.fetch_table_size_in_mb()
+
+        database.compute_rank_runs(
+            timestamp = time_now
+        )
 
         if size_mb > 5000:
             logger.critical("└─ table size > 5000 MB, exiting...")
@@ -153,16 +132,18 @@ if __name__ == "__main__":
     print('loading environment variables...')
     load_dotenv()
 
-    # # # main(logger)
+    database = SlitherDatabase(
+        connection_string=os.environ['CONN_STRING_POSTGRES'],
+        # connection_string=os.environ['CONN_STRING_SQLITE'],
+        logger = logger
+    )
+
+    # database.insert_test_cases()
+
     main(
         logger,
-        database = SlitherDatabase(
-            # connection_string=os.environ['CONN_STRING_POSTGRES'],
-            connection_string=os.environ['CONN_STRING_SQLITE'],
-            logger = logger
-        )
+        database = database
     )
-    # # # test_database(logger)
 
 
 # build dashboard with 
