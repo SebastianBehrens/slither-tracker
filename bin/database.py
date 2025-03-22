@@ -498,5 +498,176 @@ class SlitherDatabase():
             )
             size_in_mb = result[0] if result else 0
             self.logger.info(f"└─ Table size in MB: {size_in_mb}")
+            return size_in_mb
 
-        return size_in_mb
+    def inspect_server_user_rank(self, timestamp: dt.datetime):
+        query = f'''
+            SELECT * FROM server_user_rank
+            WHERE created_at = '{timestamp}';
+        '''
+        records = self.query(query, fetch='all', flg_commit=False)
+        print("\n\n server_user_rank: ================================")
+        print(dataframe(records))
+        print("====================================================\n\n")
+    
+    def inspect_user_run(self, timestamp: dt.datetime):
+        query = f'''
+            SELECT * FROM user_run
+        '''
+        records = self.query(query, fetch='all', flg_commit=False)
+        print("\n\n user_run: ================================")
+        print(dataframe(records))
+        print("====================================================\n\n")
+            
+
+    def insert_test_cases(self):
+
+        if click.confirm("Do you want to truncate the server_user_rank table and continue to insert test cases?", default=False):
+            self.truncate_server_user_rank()
+            self.truncate_user_run()
+        else:
+            print("Operation cancelled.")
+            return
+
+        datetime1 = dt.datetime.now(dt.timezone.utc)
+        datetime2 = datetime1 + dt.timedelta(seconds=10)
+        datetime3 = datetime2 + dt.timedelta(seconds=10)
+        datetime4 = datetime3 + dt.timedelta(seconds=10)
+        datetime5 = datetime4 + dt.timedelta(seconds=10)
+        
+
+        # Users:
+        data_timestamp1 = {
+                'server_id': 'test_server_1',
+                'server_ip': '127.0.0.1',
+                'server_time': datetime1.isoformat(),
+                'created_at': datetime1.isoformat(),
+                'records': [
+                    {"rank": 8, "nick": "UserA", "score": 100},
+                    {"rank": 5, "nick": "UserC", "score": 100}
+                ]
+            }
+
+        data_timestamp2 = {
+                'server_id': 'test_server_1',
+                'server_ip': '127.0.0.1',
+                'server_time': datetime2.isoformat(),
+                'created_at': datetime2.isoformat(),
+                'records': [
+                {"rank": 5, "nick": "UserA", "score": 100}
+            ]
+        }
+
+        data_timestamp3 = {
+                'server_id': 'test_server_1',
+                'server_ip': '127.0.0.1',
+                'server_time': datetime3.isoformat(),
+                'created_at': datetime3.isoformat(),
+                'records': [
+                    {"rank": 1, "nick": "UserB", "score": 150}
+                ]
+            }
+
+        data_timestamp4 = {
+                'server_id': 'test_server_1',
+                'server_ip': '127.0.0.1',
+                'server_time': datetime4.isoformat(),
+                'created_at': datetime4.isoformat(),
+                'records': [
+                    {"rank": 1, "nick": "UserB", "score": 150}
+                ]
+            }
+        self.server_user_rank_insert(
+            data_timestamp1,
+            created_at = datetime1
+            )
+        self.compute_rank_runs(timestamp = datetime1)
+        
+        self.inspect_server_user_rank(datetime1)
+        self.inspect_user_run(datetime1)
+        if click.confirm("Do you want to continue to insert test cases?", default=False):
+            pass
+        else:
+            return
+
+        self.server_user_rank_insert(
+            data_timestamp2,
+            created_at = datetime2
+            )
+        self.compute_rank_runs(timestamp = datetime2)
+        
+        self.inspect_server_user_rank(datetime2)
+        self.inspect_user_run(datetime2)
+        if click.confirm("Do you want to continue to insert test cases?", default=False):
+            pass
+        else:
+            return
+
+        self.server_user_rank_insert(
+            data_timestamp3,
+            created_at = datetime3
+        )
+        self.compute_rank_runs(timestamp = datetime3)
+        
+        self.inspect_server_user_rank(datetime3)
+        self.inspect_user_run(datetime3)
+        if click.confirm("Do you want to continue to insert test cases?", default=False):
+            pass
+        else:
+            return
+
+        self.server_user_rank_insert(
+            data_timestamp4,
+            created_at = datetime4
+        )
+        self.compute_rank_runs(timestamp = datetime4)
+
+        self.inspect_server_user_rank(datetime4)
+        self.inspect_user_run(datetime4)
+        
+    def user_run_table_exists(self):
+        if self.database_type == 'sqlite':
+            query = '''
+                SELECT name FROM sqlite_master WHERE type='table' AND name='user_run';
+            '''
+        elif self.database_type == 'postgres':
+            query = '''
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='user_run'
+                );
+            '''
+        return self.query(query, fetch='one', flg_commit=False)
+
+    def create_user_run_table(self):
+        """Create the table to store user runs if it doesn't exist."""
+        if self.database_type == 'sqlite':
+            query = '''
+                CREATE TABLE IF NOT EXISTS user_run (
+                    server_id TEXT,
+                    nick TEXT,
+                    start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    end_time TIMESTAMP WITH TIME ZONE,
+                    duration_seconds INTEGER,
+                    max_score INTEGER,
+                    min_rank INTEGER,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (server_id, nick, start_time)
+                )
+            '''
+        elif self.database_type == 'postgres':
+            query = '''
+                CREATE TABLE IF NOT EXISTS user_run (
+                    server_id TEXT,
+                    nick TEXT,
+                    start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    end_time TIMESTAMP WITH TIME ZONE,
+                    duration_seconds INTEGER,
+                    max_score INTEGER,
+                    min_rank INTEGER,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (server_id, nick, start_time)
+                )
+            '''
+        self.query(query, fetch='none', flg_commit=True)
+
+
