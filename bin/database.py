@@ -19,7 +19,9 @@ class SlitherDatabase():
         else:
             raise ValueError("Invalid connection string: must contain 'sqlite' or 'postgres'")
 
-    def query(self, query: str, fetch = 'all', flg_commit = False):
+    def query(self, query: str, fetch = 'all', flg_commit = False, flg_print_query = False):
+        if flg_print_query:
+            print(query)
         if self.database_type == 'postgres':
             with psycopg.connect(self.conn_string) as conn:
                     with conn.cursor() as cursor:
