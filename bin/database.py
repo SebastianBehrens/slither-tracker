@@ -5,6 +5,8 @@ import time
 import psycopg
 import sqlite3
 import logging
+import click
+
 class SlitherDatabase():
     def __init__(self, connection_string: str, logger: logging.Logger):
         self.conn_string = connection_string
@@ -62,16 +64,33 @@ class SlitherDatabase():
         elif self.database_type == 'postgres':
             return psycopg.connect(self.conn_string)
 
+    def drop_server_user_rank(self):
+        self.query(
+            "DROP TABLE IF EXISTS server_user_rank;",
+            flg_commit = True,
+            fetch = 'none'
+        )
+
+    def truncate_server_user_rank(self):
+        self.query(
+            "TRUNCATE TABLE server_user_rank;",
+            flg_commit = True,
+            fetch = 'none'
+        )
+
+    def truncate_user_run(self):
+        self.query(
+            "TRUNCATE TABLE user_run;",
+            flg_commit = True,
+            fetch = 'none'
+        )
+
     def validate_storage(self, flg_drop_table = False):
         self.logger.info("Validating storage...")
 
         if flg_drop_table:
             self.logger.warning("└─ Dropping table...")
-            self.query(
-                "DROP TABLE IF EXISTS server_user_rank;",
-                flg_commit = True,
-                fetch = 'none'
-            )
+            self.drop_server_user_rank()
             self.logger.warning("│    └─done.")
 
         self.logger.info("└─ Connecting to database...")
@@ -82,7 +101,7 @@ class SlitherDatabase():
 
         if not table_exists:
             self.logger.info("└─ creating table...")
-            self.server_user_rank_create()
+            self.create_server_user_rank_table()
             self.logger.info("│    └─done.")
         else:
             self.logger.info("└─ Table already exists.")
@@ -109,14 +128,14 @@ class SlitherDatabase():
             return flg_exists[0]
         else:
             raise ValueError(f"Invalid database type: {self.database_type}")
-    def server_user_rank_create(self):
+
+    def create_server_user_rank_table(self):
         if self.database_type == 'sqlite':
             query = (
                 '''
                 CREATE TABLE IF NOT EXISTS server_user_rank (
                 server_id TEXT,
                 server_time TIMESTAMP WITH TIME ZONE NOT NULL,
-                flg_active NOT NULL DEFAULT TRUE,
                 rank INTEGER,
                     nick TEXT,
                     score INTEGER,
@@ -131,7 +150,6 @@ class SlitherDatabase():
                 CREATE TABLE IF NOT EXISTS server_user_rank (
                 server_id TEXT,
                 server_time TIMESTAMP WITH TIME ZONE NOT NULL,
-                flg_active BOOLEAN NOT NULL DEFAULT TRUE,
                 rank INTEGER,
                     nick TEXT,
                     score INTEGER,
@@ -141,13 +159,13 @@ class SlitherDatabase():
             ''')
             self.query(query, flg_commit = True, fetch = 'none')
 
-    def server_user_rank_insert(self, data: dict):
+    def server_user_rank_insert(self, data: dict, created_at: dt.datetime):
 
         self.logger.debug("│    └─ storing data...")
         df = dataframe(data['records'])
         df['server_id'] = data['server_id']
         df['server_time'] = data['server_time']
-        df['created_at'] = dt.datetime.now(dt.timezone.utc).isoformat()
+        df['created_at'] = created_at
         df = df[['server_id', 'server_time', 'rank', 'nick', 'score', 'created_at']]
 
         conn = self.get_conn()
@@ -158,42 +176,38 @@ class SlitherDatabase():
             (
                 server_id,
                 server_time,
-                flg_active,
                 rank,
                 nick,
                 score,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
         '''
         insertion_query_postgres = '''
             INSERT INTO public.server_user_rank
             (
                 server_id,
                 server_time,
-                flg_active,
                 rank,
                 nick,
                 score,
                 created_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (server_id, server_time, rank, nick) DO NOTHING
         '''
 
 
         for index, row in df.iterrows():
-            print(index)
             try:
-                row_data = (row['server_id'], row['server_time'], True, row['rank'], row['nick'], row['score'], row['created_at'])
+                row_data = (row['server_id'], row['server_time'], row['rank'], row['nick'], row['score'], row['created_at'])
                 if self.database_type == 'sqlite':
                     cursor.execute(insertion_query_sqlite, row_data)
                 else:
                     cursor.execute(insertion_query_postgres, row_data)
             except Exception as e:
                 self.logger.error(f"Error inserting row {index}: {e}")
-        self.logger.info(f"│    └─ inserted data for server {row['server_id']} at {row['server_time']}")
-        print(df)
+        self.logger.info(f"│    └─ inserted data for server {row['server_id']} at {row['server_time']} (created_at: {row['created_at']})")
 
         conn.commit()
         conn.close()
@@ -455,6 +469,7 @@ class SlitherDatabase():
         
         self.query(query, fetch='none', flg_commit=True, flg_print_query=False)
 
+    def fetch_table_size_in_rows(self) -> int:
         if self.database_type == 'sqlite':
             row_count = self.query(
                 'SELECT COUNT(*) FROM server_user_rank',
@@ -471,7 +486,7 @@ class SlitherDatabase():
             self.logger.info(f"└─ Number of rows in server_user_rank: {row_count}")
         return row_count
 
-    def fetch_table_size_in_mb(self):
+    def fetch_table_size_in_mb(self) -> int:
         if self.database_type == 'sqlite':
             result = self.query(
                 '''
@@ -487,6 +502,7 @@ class SlitherDatabase():
             )
             size_in_mb = result[0] if result else 0
             self.logger.info(f"└─ Table size in MB: {size_in_mb}")
+            return size_in_mb
         elif self.database_type == 'postgres':
             result = self.query(
                 '''
