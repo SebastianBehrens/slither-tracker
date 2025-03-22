@@ -228,7 +228,233 @@ class SlitherDatabase():
         #     conn.commit()
         #     conn.close()
         
-    def fetch_table_size_in_rows(self):
+    def compute_rank_runs(self, timestamp=None):
+        """
+        Compute user rank runs for records at a specific timestamp.
+        
+        Args:
+            timestamp: datetime object for the timestamp to process records for.
+                      If None, processes all records.
+        """
+        timestamp_str = timestamp.isoformat() if timestamp else None
+        self.logger.info(f"Computing rank runs for timestamp: {timestamp_str}")
+        
+        # First, ensure we have a table to store the runs
+        self.create_user_run_table()
+        
+        # Open new runs for users who appear for the first time
+        self.open_new_runs(timestamp_str)
+        
+        # Close runs for users who are no longer visible
+        self.close_inactive_runs(timestamp_str)
+        
+        self.logger.info("Rank runs computation completed.")
+    
+    def open_new_runs(self, timestamp_str=None):
+        """
+        Open new runs for users who appear for the first time in the leaderboard.
+        
+        Args:
+            timestamp_str: ISO format string of the timestamp to process.
+                          If None, processes all records.
+        """
+        self.logger.info(f"Opening new runs for timestamp: {timestamp_str}")
+        if self.database_type == 'sqlite':
+            query = f'''
+                WITH current_records AS (
+                    SELECT 
+                        server_id,
+                        nick,
+                        created_at,
+                        score,
+                        rank
+                    FROM server_user_rank
+                    WHERE created_at = '{timestamp_str}'
+                ),
+                previous_timestamp AS (
+                    SELECT MAX(created_at) as prev_time
+                    FROM server_user_rank
+                    WHERE created_at < '{timestamp_str}'
+                ),
+                previous_records AS (
+                    SELECT 
+                        server_id,
+                        nick
+                    FROM server_user_rank
+                    WHERE created_at = (SELECT prev_time FROM previous_timestamp)
+                ),
+                existing_open_runs AS (
+                    SELECT 
+                        server_id,
+                        nick
+                    FROM user_run
+                    WHERE end_time IS NULL
+                )
+                INSERT OR IGNORE INTO user_run (server_id, nick, start_time, max_score, min_rank, created_at)
+                SELECT 
+                    cur.server_id,
+                    cur.nick,
+                    cur.server_time,
+                    cur.score,
+                    cur.rank,
+                    '{timestamp_str}' AS created_at
+                FROM current_records cur
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM existing_open_runs r
+                    WHERE r.server_id = cur.server_id
+                    AND r.nick = cur.nick
+                    AND r.end_time IS NULL
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM previous_records prev
+                    WHERE prev.server_id = cur.server_id
+                    AND prev.nick = cur.nick
+                )
+            '''
+        elif self.database_type == 'postgres':
+            query = f'''
+                WITH current_records AS (
+                    SELECT 
+                        server_id,
+                        nick,
+                        created_at,
+                        score,
+                        rank
+                    FROM server_user_rank
+                    WHERE created_at = '{timestamp_str}'
+                ),
+                previous_timestamp AS (
+                    SELECT MAX(created_at) as prev_time
+                    FROM server_user_rank
+                    WHERE created_at < '{timestamp_str}'
+                ),
+                previous_records AS (
+                    SELECT 
+                        server_id,
+                        nick
+                    FROM server_user_rank
+                    WHERE created_at = (SELECT prev_time FROM previous_timestamp)
+                ),
+                open_runs AS (
+                    SELECT 
+                        server_id,
+                        start_time,
+                        end_time,
+                        nick
+                    FROM user_run
+                    WHERE end_time IS NULL
+                )
+                INSERT INTO user_run (server_id, nick, start_time, max_score, min_rank, created_at)
+                SELECT 
+                    cur.server_id,
+                    cur.nick,
+                    cur.created_at,
+                    cur.score,
+                    cur.rank,
+                    '{timestamp_str}' AS created_at
+                FROM current_records cur
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM open_runs
+                    WHERE open_runs.server_id = cur.server_id
+                    AND open_runs.nick = cur.nick
+                    AND open_runs.end_time IS NULL
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM previous_records prev
+                    WHERE prev.server_id = cur.server_id
+                    AND prev.nick = cur.nick
+                )
+                ON CONFLICT (server_id, nick, start_time) DO NOTHING
+            '''
+        
+        self.query(query, fetch='none', flg_commit=True, flg_print_query=False)
+    
+    def close_inactive_runs(self, timestamp_str=None):
+        """
+        Close runs for users who are no longer visible in the latest data.
+        
+        Args:
+            timestamp_str: ISO format string of the timestamp to process.
+                          If None, processes all records.
+        """
+        self.logger.info(f"Closing inactive runs for timestamp: {timestamp_str}")
+        if self.database_type == 'sqlite':
+            query = f'''
+                WITH previous_timestamp AS (
+                    SELECT MAX(created_at) as max_time
+                    FROM server_user_rank
+                    WHERE created_at < '{timestamp_str}'
+                ),
+                current_users AS (
+                    SELECT DISTINCT
+                        server_id,
+                        nick
+                    FROM server_user_rank
+                    WHERE created_at = '{timestamp_str}'
+                ),
+                open_runs_to_close AS (
+                    SELECT
+                        r.server_id,
+                        r.nick,
+                        r.start_time
+                    FROM user_run r
+                    WHERE r.end_time IS NULL
+                    AND NOT EXISTS (
+                        SELECT 1 FROM current_users cu
+                        WHERE cu.server_id = r.server_id
+                        AND cu.nick = r.nick
+                    )
+                )
+                UPDATE user_run
+                SET 
+                    end_time = (SELECT max_time FROM previous_timestamp),
+                    duration_seconds = CAST(
+                        (JULIANDAY((SELECT max_time FROM previous_timestamp)) - JULIANDAY(start_time)) * 86400 AS INTEGER
+                    )
+                WHERE (server_id, nick, start_time) IN (
+                    SELECT server_id, nick, start_time FROM open_runs_to_close
+                )
+            '''
+        elif self.database_type == 'postgres':
+            query = f'''
+                WITH previous_timestamp AS (
+                    SELECT MAX(created_at) as max_time
+                    FROM server_user_rank
+                    WHERE created_at < '{timestamp_str}'
+                ),
+                current_users AS (
+                    SELECT DISTINCT
+                        server_id,
+                        nick
+                    FROM server_user_rank
+                    WHERE created_at = '{timestamp_str}'
+                ),
+                open_runs_to_close AS (
+                    SELECT
+                        r.server_id,
+                        r.nick,
+                        r.start_time
+                    FROM user_run r
+                    WHERE r.end_time IS NULL
+                    AND NOT EXISTS (
+                        SELECT 1 FROM current_users cu
+                        WHERE cu.server_id = r.server_id
+                        AND cu.nick = r.nick
+                    )
+                )
+                UPDATE user_run
+                SET 
+                    end_time = (SELECT max_time FROM previous_timestamp),
+                    duration_seconds = EXTRACT(EPOCH FROM (
+                        (SELECT max_time FROM previous_timestamp) - start_time
+                    ))::INTEGER
+                WHERE (server_id, nick, start_time) IN (
+                    SELECT server_id, nick, start_time FROM open_runs_to_close
+                )
+            '''
+        
+        self.query(query, fetch='none', flg_commit=True, flg_print_query=False)
+
         if self.database_type == 'sqlite':
             row_count = self.query(
                 'SELECT COUNT(*) FROM server_user_rank',
