@@ -9,8 +9,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-from database import SlitherDatabase
-import util_logging
+from slither.util import SlitherDatabase, setup_logging
 
 def fetch_webpage(url, logger:logging.Logger, flg_dump_content = False):
     logger.info("Fetching webpage...")
@@ -84,7 +83,7 @@ def process_table(table, logger:logging.Logger):
 
 
 
-def main(
+def backend(
     logger: logging.Logger,
     database: SlitherDatabase
     ):
@@ -122,28 +121,7 @@ def main(
 
         time.sleep(3)
 
-if __name__ == "__main__":
 
-    print('setting up logging...')
-    log_dir = Path.cwd() / 'logs'
-    log_file = 'main.log'
-    util_logging.setup_logging(log_dir, log_file, logging.INFO)
-    logger = logging.getLogger('default')
-    print('loading environment variables...')
-    load_dotenv()
-
-    database = SlitherDatabase(
-        connection_string=os.environ['CONN_STRING_POSTGRES'],
-        # connection_string=os.environ['CONN_STRING_SQLITE'],
-        logger = logger
-    )
-
-    # database.insert_test_cases()
-
-    main(
-        logger,
-        database = database
-    )
 
 
 # build dashboard with 
