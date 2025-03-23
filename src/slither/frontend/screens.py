@@ -33,7 +33,7 @@ from time import time
 from textual.renderables.gradient import LinearGradient
 from time import time
 
-from widgets import *
+from .widgets import *
 
 import asyncio
 import time

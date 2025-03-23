@@ -2,15 +2,16 @@ from textual.app import (
     App,
 )
 
-
+import logging
 from textual.screen import Screen
 from pathlib import Path
 import os
-from database import database
+from slither.util import SlitherDatabaseMinimal
+import pandas as pd
 
-from screens import *
+from .screens import *
 
-class SlitherInsight(App):
+class Frontend(App):
     CSS_PATH = "style.tcss"
 
     BINDINGS = [
@@ -22,13 +23,28 @@ class SlitherInsight(App):
         "main": MainScreen
     }
 
+    def __init__(self, connection_string: str, logger: logging.Logger):
+        super().__init__()
+        self.logger = logger
+        self.database = SlitherDatabaseMinimal(
+            connection_string=connection_string,
+            logger=self.logger
+        )
+
+
     def on_mount(self) -> None:
         self.push_screen("main")
         self.set_interval(interval=2, callback=self.fetch_data, repeat=4)
-        self.database = Database()
 
     def fetch_data(self):
         self.notify("Fetching data...", timeout=1)
+        result = self.database.query(
+            query="SELECT * FROM public.server_user_rank LIMIT 3;",
+            fetch='all'
+        )
+        df = pd.DataFrame(result)
+        self.query_one()
+        print(result)
 
         self.notify("Data updated!", timeout=1)
 
@@ -38,6 +54,3 @@ class SlitherInsight(App):
     def action_toggle_mode(self):
         self.dark = not self.dark
 
-if __name__ == "__main__":
-    app = SlitherInsight()
-    app.run()

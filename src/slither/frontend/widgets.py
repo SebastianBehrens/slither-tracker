@@ -76,24 +76,40 @@ Otherwise, all receipts have been processed.
         yield Label("[underline][bold]Receipt Processor[/bold][/underline]", classes='sidebar-title')
         yield Label(text, classes='sidebar-text')
 
-class SampleDataTable(DataTable):
+class DurationRankingTable(DataTable):
     def __init__(self) -> None:
         super().__init__()
-        self._populate_table()
+        self.data = []
+        self.refresh()
 
-    def _populate_table(self) -> None:
-        data = [
-            ["Item", "Quantity", "Price", "Total"],
-            ["Apples", "2", "$1.00", "$2.00"],
-            ["Bananas", "5", "$0.50", "$2.50"],
-            ["Oranges", "3", "$0.75", "$2.25"],
-            ["Grapes", "1", "$3.00", "$3.00"],
-            ["Peaches", "4", "$1.25", "$5.00"]
-        ]
+    def compose(self) -> ComposeResult:
+        self.add_columns('Rank', width=10)
+        self.add_columns('User', width=20)
+        self.add_columns('Duration (sec)', width=10)
+        self.add_columns('Date', width=20)
+        self.refresh()
+        yield self.table
 
-        self.add_columns(*data[0])
-        for row in data[1:]:
-            self.add_row(*row)
+    def refresh(self):
+        self.clear()
+        self.data = self.app.database.query(
+            query="""
+            SELECT
+                min_rank
+                ,nick
+                ,duration_seconds
+                ,start_time
+            FROM public.user_run
+            WHERE duration_seconds IS NOT NULL
+            ORDER BY duration_seconds DESC
+            LIMIT 3;
+            """,
+            fetch='all'
+        )
+        for row in self.data:
+            self.add_row(row[0], row[1], row[2], row[3])
+
+
 
 class HistogramPlot(PlotextPlot):
 

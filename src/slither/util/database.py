@@ -255,11 +255,13 @@ class SlitherDatabase():
         
         # First, ensure we have a table to store the runs
         self.create_user_run_table()
+        self.create_user_rank_run_table()
         
         # Open new runs for users who appear for the first time
         self.open_new_runs(timestamp_str)
         
         # Close runs for users who are no longer visible
+        self.close_inactive_rank_runs(timestamp_str)
         self.close_inactive_runs(timestamp_str)
         
         self.logger.info("Rank runs computation completed.")
@@ -686,4 +688,165 @@ class SlitherDatabase():
             '''
         self.query(query, fetch='none', flg_commit=True)
 
+    def create_user_rank_run_table(self):
+        """Create the table to store user rank runs if it doesn't exist."""
+        if self.database_type == 'sqlite':
+            query = '''
+                CREATE TABLE IF NOT EXISTS user_rank_run (
+                    server_id TEXT,
+                    nick TEXT,
+                    rank INTEGER,
+                    start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    end_time TIMESTAMP WITH TIME ZONE,
+                    duration_seconds INTEGER,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (server_id, nick, rank, start_time)
+                )
+            '''
+        elif self.database_type == 'postgres':
+            query = '''
+                CREATE TABLE IF NOT EXISTS user_rank_run (
+                    server_id TEXT,
+                    nick TEXT,
+                    rank INTEGER,
+                    start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    end_time TIMESTAMP WITH TIME ZONE,
+                    duration_seconds INTEGER,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (server_id, nick, rank, start_time)
+                )
+            '''
+        self.query(query, fetch='none', flg_commit=True)
+
+    def close_inactive_rank_runs(self, timestamp_str=None):
+        """
+        Close inactive rank runs for users in the user_rank_run table.
+        
+        Args:
+            timestamp_str: ISO format string of the timestamp to process.
+                          If None, processes all records.
+        """
+        self.logger.info(f"Closing inactive rank runs for timestamp: {timestamp_str}")
+        if self.database_type == 'sqlite':
+            query = f'''
+                WITH current_records AS (
+                    SELECT 
+                        server_id,
+                        nick,
+                        rank,
+                        created_at
+                    FROM server_user_rank
+                    WHERE created_at = '{timestamp_str}'
+                ),
+                previous_timestamp AS (
+                    SELECT MAX(created_at) as prev_time
+                    FROM server_user_rank
+                    WHERE created_at < '{timestamp_str}'
+                ),
+                previous_records AS (
+                    SELECT 
+                        server_id,
+                        nick,
+                        rank
+                    FROM server_user_rank
+                    WHERE created_at = (SELECT prev_time FROM previous_timestamp)
+                ),
+                open_rank_runs AS (
+                    SELECT 
+                        server_id,
+                        nick,
+                        rank,
+                        start_time
+                    FROM user_rank_run
+                    WHERE end_time IS NULL
+                )
+                INSERT OR IGNORE INTO user_rank_run (server_id, nick, rank, start_time, created_at)
+                SELECT 
+                    cur.server_id,
+                    cur.nick,
+                    cur.rank,
+                    cur.created_at,
+                    '{timestamp_str}' AS created_at
+                FROM current_records cur
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM open_rank_runs r
+                    WHERE r.server_id = cur.server_id
+                    AND r.nick = cur.nick
+                    AND r.rank = cur.rank
+                    AND r.end_time IS NULL
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM previous_records prev
+                    WHERE prev.server_id = cur.server_id
+                    AND prev.nick = cur.nick
+                    AND prev.rank = cur.rank
+                )
+            '''
+        elif self.database_type == 'postgres':
+            query = f'''
+                WITH current_records AS (
+                    SELECT 
+                        server_id,
+                        nick,
+                        rank,
+                        created_at
+                    FROM server_user_rank
+                    WHERE created_at = '{timestamp_str}'
+                ),
+                previous_timestamp AS (
+                    SELECT MAX(created_at) as prev_time
+                    FROM server_user_rank
+                    WHERE created_at < '{timestamp_str}'
+                ),
+                previous_records AS (
+                    SELECT 
+                        server_id,
+                        nick,
+                        rank
+                    FROM server_user_rank
+                    WHERE created_at = (SELECT prev_time FROM previous_timestamp)
+                ),
+                open_rank_runs AS (
+                    SELECT 
+                        server_id,
+                        nick,
+                        rank,
+                        start_time
+                    FROM user_rank_run
+                    WHERE end_time IS NULL
+                )
+                INSERT INTO user_rank_run (server_id, nick, rank, start_time, created_at)
+                SELECT 
+                    cur.server_id,
+                    cur.nick,
+                    cur.rank,
+                    cur.created_at,
+                    '{timestamp_str}' AS created_at
+                FROM current_records cur
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM user_rank_run r
+                    WHERE r.server_id = cur.server_id
+                    AND r.nick = cur.nick
+                    AND r.rank = cur.rank
+                    AND r.end_time IS NULL
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM previous_records prev
+                    WHERE prev.server_id = cur.server_id
+                    AND prev.nick = cur.nick
+                    AND prev.rank = cur.rank
+                )
+                ON CONFLICT (server_id, nick, rank, start_time) DO NOTHING
+            '''
+        
+        self.query(query, fetch='none', flg_commit=True, flg_print_query=False)
+
+class SlitherDatabaseMinimal(SlitherDatabase):
+    """Minimal database class that only supports the query method.
+    """
+    def __init__(self, connection_string: str, logger: logging.Logger):
+        self.database = SlitherDatabase(connection_string, logger)
+    
+    def query(self, query: str, fetch = 'all', flg_commit = False, flg_print_query = False):
+        return self.database.query(query, fetch, flg_commit, flg_print_query)
 
