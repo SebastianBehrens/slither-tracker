@@ -1,0 +1,66 @@
+MainScreen {
+    background: #4a2490;
+    align: center middle;
+}
+
+ScrollableContainer {
+    align: center middle;
+    width: 100%;
+}
+
+
+Sidebar {
+    width: 40%;
+    height: 100%;
+    dock: left;
+    layer: sidebar;
+    background: #37b669;
+    color:  #9850ff;
+}
+
+Sidebar.-hidden {
+    display: none;
+}
+
+.sidebar-title {
+    content-align: center middle;
+    width: 100%;
+    padding: 1 3;
+    margin: 1 2;
+    background: silver;
+}
+
+.main-title {
+    width: 100%;
+    margin: 1 2;
+    align: right middle;
+    content-align: center middle;
+    border: hkey #37b669;
+}
+
+.content-title {
+    width: 55vh;
+    height: 5vh;
+    align: left middle;
+    content-align: left bottom;
+    border-bottom: hkey #37b669;
+}
+
+.content {
+    width: 85%;
+    height: auto;
+    align: center middle;
+    content-align: center middle;
+    margin: 1 2;
+}
+
+SampleDataTable {
+    margin: 1 2;
+}
+
+HistogramPlot {
+    height: 20vh;
+    align: center middle;
+    content-align: center middle;
+    margin: 1 2;
+}
