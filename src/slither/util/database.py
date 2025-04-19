@@ -112,7 +112,7 @@ class SlitherDatabase():
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='server_user_rank';"
             )
             flg_exists = self.query(query, fetch = 'one', flg_commit = False)
-            return flg_exists[0]
+            return flg_exists
         elif self.database_type == 'postgres':
             query = (
                 """
@@ -137,10 +137,10 @@ class SlitherDatabase():
                 server_id TEXT,
                 server_time TIMESTAMP WITH TIME ZONE NOT NULL,
                 rank INTEGER,
-                    nick TEXT,
-                    score INTEGER,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (server_id, server_time, rank, nick)
+                nick TEXT,
+                score INTEGER,
+                created_at TIMESTAMP WITH TIME ZONE
+                PRIMARY KEY (server_id, server_time, rank, nick)
                 )
             ''')
             self.query(query, flg_commit = True, fetch = 'none')
